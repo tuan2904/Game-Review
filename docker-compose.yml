@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:17
+    container_name: gamereview-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gamereview
+      POSTGRES_USER: tuanhd
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - gamereview_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tuanhd -d gamereview"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: gamereview-backend
+    restart: unless-stopped
+    environment:
+      DB_NAME: gamereview
+      DB_USER: tuanhd
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DJANGO_SECRET_KEY: docker-dev-secret-key-not-for-production
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      CSRF_TRUSTED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gamereview-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  gamereview_db_data:
