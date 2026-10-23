@@ -24,6 +24,7 @@ Game-Review/
 │   │   ├── reviews/      # Game reviews
 │   │   ├── comments/     # Review comments
 │   │   ├── favorites/    # User favorites
+│   │   ├── reports/      # User reports + moderation queue (Phase E)
 │   │   └── common/       # Shared infrastructure (responses, errors, pagination)
 │   ├── config/           # Django settings, urls
 │   ├── requirements.txt
@@ -136,5 +137,5 @@ Error:
 | 08    | Review UI                      | Done   |
 | 09    | Admin                          | Done   |
 | 10    | Comments & Favorites UI        | Done   |
-| 11    | Testing and Hardening          | Pending |
+| 11    | Testing and Hardening          | In progress |
 # Game-Review

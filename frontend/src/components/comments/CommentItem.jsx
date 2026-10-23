@@ -13,13 +13,19 @@ import { formatDateTime } from "../../utils/format";
  * Actions render only when the callbacks are passed — the parent decides
  * ownership (`author.id` vs. the signed-in user, or staff). Delete is a
  * two-step inline confirmation; while it is pending both buttons are
- * disabled so the request cannot be duplicated.
+ * disabled so the request cannot be duplicated. Staff additionally get a
+ * Hide/Unhide control (`onToggleHidden`) and see a "Hidden" badge on
+ * moderated comments.
  *
  * @param {Object} props
  * @param {import("../../types").Comment} props.comment
  * @param {import("react").ReactNode} [props.children] inline edit form
  * @param {() => void} [props.onEdit] show an Edit button when provided
  * @param {() => void} [props.onDelete] show a Delete button when provided
+ * @param {import("react").ReactNode} [props.reportControl] Phase E report
+ *   control rendered for signed-in non-owners (parent decides eligibility)
+ * @param {() => void} [props.onToggleHidden] staff Hide/Unhide control
+ * @param {boolean} [props.moderating] hide/unhide request in flight
  * @param {boolean} [props.confirming] render the delete confirmation row
  * @param {() => void} [props.onConfirmDelete]
  * @param {() => void} [props.onCancelDelete]
@@ -30,6 +36,9 @@ export default function CommentItem({
   children,
   onEdit,
   onDelete,
+  reportControl,
+  onToggleHidden,
+  moderating = false,
   confirming = false,
   onConfirmDelete,
   onCancelDelete,
@@ -46,9 +55,10 @@ export default function CommentItem({
   }
 
   return (
-    <li className="comment">
+    <li className={`comment${comment.is_hidden ? " comment--hidden" : ""}`}>
       <header className="comment__header">
         <span className="comment__author">{author}</span>
+        {comment.is_hidden && <span className="badge badge--hidden comment__badge">Hidden</span>}
         <span className="comment__meta">
           {created && <time className="comment__date">{created}</time>}
           {edited && <span className="comment__edited">(edited)</span>}
@@ -77,8 +87,18 @@ export default function CommentItem({
           </Button>
         </div>
       ) : (
-        (onEdit || onDelete) && (
+        (onEdit || onDelete || onToggleHidden || reportControl) && (
           <div className="comment__actions">
+            {onToggleHidden && (
+              <Button
+                variant="ghost"
+                className="btn--small"
+                loading={moderating}
+                onClick={onToggleHidden}
+              >
+                {comment.is_hidden ? "Unhide" : "Hide"}
+              </Button>
+            )}
             {onEdit && (
               <Button variant="ghost" className="btn--small" onClick={onEdit}>
                 Edit
@@ -89,6 +109,7 @@ export default function CommentItem({
                 Delete
               </Button>
             )}
+            {reportControl}
           </div>
         )
       )}

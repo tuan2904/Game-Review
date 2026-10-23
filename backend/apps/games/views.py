@@ -1,4 +1,4 @@
-from django.db.models import ProtectedError
+from django.db.models import Avg, Count, ProtectedError
 from rest_framework.generics import GenericAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.mixins import DestroyModelMixin, UpdateModelMixin
 
@@ -8,6 +8,21 @@ from apps.common.permissions import IsAdminOrReadOnly
 from apps.common.responses import success_response
 from apps.games.models import Category, Game
 from apps.games.serializers import CategorySerializer, GameSerializer
+
+
+def with_review_stats(queryset):
+    """Attach the Phase D review aggregates to a game queryset.
+
+    Both aggregates are declared in a **single** ``annotate()`` call so they
+    share one join — ``review_count`` and ``average_rating`` therefore always
+    describe the same rows, and a page of games still costs one query (no
+    N+1). Games with no reviews annotate as ``review_count=0`` /
+    ``average_rating=None``.
+    """
+    return queryset.annotate(
+        average_rating=Avg("reviews__rating"),
+        review_count=Count("reviews"),
+    )
 
 
 class GameListCreateView(ListQueryMixin, ListCreateAPIView):
@@ -22,7 +37,7 @@ class GameListCreateView(ListQueryMixin, ListCreateAPIView):
 
     def get_queryset(self):
         return self.apply_filters(
-            Game.objects.visible_to(self.request.user).select_related("category")
+            with_review_stats(Game.objects.visible_to(self.request.user).select_related("category"))
         )
 
     def create(self, request, *args, **kwargs):
@@ -39,7 +54,9 @@ class GameDetailView(RetrieveAPIView):
     lookup_field = "slug"
 
     def get_queryset(self):
-        return Game.objects.visible_to(self.request.user).select_related("category")
+        return with_review_stats(
+            Game.objects.visible_to(self.request.user).select_related("category")
+        )
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -49,7 +66,9 @@ class GameDetailView(RetrieveAPIView):
 
 
 class GameUpdateDestroyView(UpdateModelMixin, DestroyModelMixin, GenericAPIView):
-    queryset = Game.objects.select_related("category")
+    # Annotated so a PATCH response reports the game's real aggregates instead
+    # of the serializer defaults (a brand-new game has none to report).
+    queryset = with_review_stats(Game.objects.select_related("category"))
     serializer_class = GameSerializer
     permission_classes = [IsAdminOrReadOnly]
 

@@ -63,6 +63,21 @@ export default function GameCard({ game, action }) {
               : "No description provided."}
           </p>
         )}
+        {/* Rating summary (Phase D). The favorites payload omits the
+            aggregates entirely — those cards render no rating line instead
+            of inventing "0 reviews". */}
+        {game.review_count !== undefined && (
+          <p className="game-card__rating">
+            <span className="game-card__rating-star" aria-hidden="true">
+              ★
+            </span>{" "}
+            {game.review_count === 0
+              ? "No reviews yet"
+              : `${game.average_rating != null ? `${Number(game.average_rating).toFixed(1)} · ` : ""}${
+                  game.review_count
+                } ${game.review_count === 1 ? "review" : "reviews"}`}
+          </p>
+        )}
         {action && <div className="game-card__action">{action}</div>}
       </div>
     </article>

@@ -7,12 +7,17 @@ import EmptyState from "../common/EmptyState";
 import ErrorMessage from "../common/ErrorMessage";
 import Loading from "../common/Loading";
 import Pagination from "../common/Pagination";
+import ReportControl from "../moderation/ReportControl";
 import ReviewCard from "./ReviewCard";
 import ReviewForm from "./ReviewForm";
 
 /**
  * Reviews section for one game: paginated display plus the Phase 08
  * workflows (create / edit / delete per docs/API.md — Review API).
+ *
+ * Ordering is server-side and allowlisted (Phase D): the "Sort by" control
+ * switches between newest/oldest and highest/lowest rated; changing it
+ * reloads page 1 (the key covers slug + page + ordering + reload).
  *
  * Mounted by GameDetail with `key={slug}` so every piece of local state
  * (pagination, edit mode, confirmation) resets when the game changes —
@@ -35,6 +40,16 @@ import ReviewForm from "./ReviewForm";
  * @param {Object} props
  * @param {string} props.slug game slug
  */
+
+/* Allowlisted server-side ordering (docs/API.md — List reviews for a game). */
+const ORDER_OPTIONS = [
+  { value: "-created_at", label: "Newest first" },
+  { value: "created_at", label: "Oldest first" },
+  { value: "-rating", label: "Highest rated" },
+  { value: "rating", label: "Lowest rated" },
+];
+const DEFAULT_ORDERING = "-created_at";
+
 export default function GameReviews({ slug }) {
   const { user, isAuthenticated } = useAuth();
   const location = useLocation();
@@ -42,6 +57,7 @@ export default function GameReviews({ slug }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState({ key: null, data: null, error: null });
   const [pager, setPager] = useState({ slug: null, page: 1 });
+  const [ordering, setOrdering] = useState(DEFAULT_ORDERING);
 
   const [editingId, setEditingId] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
@@ -51,12 +67,12 @@ export default function GameReviews({ slug }) {
 
   /* Page resets implicitly when the slug changes (derived, no effect). */
   const page = pager.slug === slug ? pager.page : 1;
-  const key = `${slug}|${page}|${reloadKey}`;
+  const key = `${slug}|${page}|${ordering}|${reloadKey}`;
 
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
-    listGameReviews(slug, { page, page_size: 12 }, { signal })
+    listGameReviews(slug, { page, page_size: 12, ordering }, { signal })
       .then((data) => {
         if (signal.aborted) return;
         setResult({ key, data, error: null });
@@ -66,7 +82,7 @@ export default function GameReviews({ slug }) {
         setResult({ key, data: null, error: caught });
       });
     return () => controller.abort();
-  }, [slug, page, key]);
+  }, [slug, page, ordering, key]);
 
   const loading = result.key !== key;
   const reviews = loading ? null : result.data;
@@ -150,6 +166,13 @@ export default function GameReviews({ slug }) {
             }
 
             const canManage = Boolean(user) && (user.is_staff || review.author?.id === user.id);
+            /* Phase E: signed-in non-owners (staff moderate via the admin
+               queue instead) can flag the review; the control owns its own
+               submit/confirm state inside the card. */
+            const reportControl =
+              isAuthenticated && !user?.is_staff && review.author?.id !== user?.id ? (
+                <ReportControl targetType="review" targetId={review.id} />
+              ) : null;
             /* Comments live inside their review (lazy panel — see
                ReviewComments); keyed per review so state resets when the
                review list changes. */
@@ -157,7 +180,7 @@ export default function GameReviews({ slug }) {
 
             if (!canManage) {
               return (
-                <ReviewCard key={review.id} review={review}>
+                <ReviewCard key={review.id} review={review} reportControl={reportControl}>
                   {comments}
                 </ReviewCard>
               );
@@ -213,6 +236,30 @@ export default function GameReviews({ slug }) {
       )}
 
       {actionError && <ErrorMessage title="Review action failed" message={actionError} />}
+
+      {reviews && reviews.items.length > 0 && (
+        <div className="review-sort">
+          <label className="field__label" htmlFor="review-ordering">
+            Sort by
+          </label>
+          <select
+            id="review-ordering"
+            className="field__input review-sort__select"
+            value={ordering}
+            onChange={(event) => {
+              setOrdering(event.target.value);
+              /* Back to page 1 — the new sort may have fewer pages. */
+              setPager({ slug, page: 1 });
+            }}
+          >
+            {ORDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {content}
     </>

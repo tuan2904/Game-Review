@@ -273,6 +273,21 @@ a {
   color: var(--color-primary);
 }
 
+.badge--hidden {
+  background: #fdeaea;
+  color: #b42318;
+}
+
+.badge--pending {
+  background: #fff4e5;
+  color: #b54708;
+}
+
+.badge--resolved {
+  background: #e7f6ec;
+  color: #137333;
+}
+
 .muted {
   color: var(--color-text-muted);
 }
@@ -417,6 +432,12 @@ a {
   background: var(--color-danger-bg);
   border: 1px solid var(--color-danger);
   color: var(--color-danger);
+}
+
+.alert--success {
+  background: #e7f6ec;
+  border: 1px solid #2f9e57;
+  color: #1e6f3d;
 }
 
 .alert__title {
@@ -588,6 +609,16 @@ a {
   margin: 0 0 var(--space-2);
 }
 
+.game-card__rating {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.game-card__rating-star {
+  color: var(--color-star);
+}
+
 .game-card__excerpt {
   font-size: 0.9rem;
   color: var(--color-text-muted);
@@ -754,6 +785,18 @@ a {
   margin-bottom: var(--space-4);
 }
 
+.review-sort {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.review-sort__select {
+  max-width: 12rem;
+}
+
 .review-form-panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -874,6 +917,10 @@ a {
   font-size: 0.9rem;
 }
 
+.comments__filter {
+  max-width: 14rem;
+}
+
 .comment-list {
   list-style: none;
   margin: 0;
@@ -893,6 +940,17 @@ a {
 
 .comment--editing {
   background: var(--color-surface);
+}
+
+.comment--hidden {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.comment__badge {
+  margin-bottom: 0;
+  font-size: 0.65rem;
+  padding: 0 var(--space-1);
 }
 
 .comment__edit-title {
@@ -1094,6 +1152,149 @@ a {
   margin: 0;
   color: var(--color-text-muted);
   font-size: 0.82rem;
+}
+
+/* ---------------------------------------------------------------
+   Profile
+   --------------------------------------------------------------- */
+
+.profile__email {
+  margin-top: 0;
+}
+
+.profile__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.profile__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------
+   Phase 11E — Moderation & reporting
+   --------------------------------------------------------------- */
+
+/* Dashboard counters (GET /admin/summary/) */
+.admin-metrics {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-bottom: var(--space-5);
+}
+
+.admin-metric {
+  margin: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
+.admin-metric__value {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.admin-metric__label {
+  margin: var(--space-1) 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.admin-metric__hint {
+  margin: var(--space-1) 0 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+/* Moderation workspace tabs (Reports / Reviews / Comments) */
+.admin-tabs {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.admin-tabs__tab {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.admin-tabs__tab:hover {
+  color: var(--color-text);
+}
+
+.admin-tabs__tab--active {
+  background: #eef0ff;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Secondary table lines: report details, resolver, quoted content */
+.admin-table__excerpt {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  margin-top: var(--space-1);
+}
+
+/* Inline report form rendered inside review/comment action rows */
+.report-control {
+  flex-basis: 100%;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: flex-end;
+  margin-top: var(--space-2);
+}
+
+.report-control__field {
+  flex: 1;
+  min-width: 10rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.report-control__buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.report-control__buttons .btn {
+  margin-top: 0;
+}
+
+.report-control__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-danger);
+}
+
+.report-control__done {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 /* ---------------------------------------------------------------

@@ -45,6 +45,11 @@ class GameSerializer(serializers.ModelSerializer):
     slug = serializers.SlugField(
         required=False, validators=[UniqueValidator(queryset=Game.objects.all())]
     )
+    # Phase D aggregates — always populated on reads (annotated querysets);
+    # the defaults cover responses built from a non-annotated instance, e.g.
+    # a freshly created game (no reviews yet).
+    average_rating = serializers.FloatField(read_only=True, default=None, allow_null=True)
+    review_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Game
@@ -60,6 +65,8 @@ class GameSerializer(serializers.ModelSerializer):
             "status",
             "category",
             "category_id",
+            "average_rating",
+            "review_count",
             "created_at",
             "updated_at",
         )

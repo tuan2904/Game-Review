@@ -15,6 +15,8 @@ import AdminCategories from "../pages/admin/AdminCategories";
 import AdminDashboard from "../pages/admin/AdminDashboard";
 import AdminGameForm from "../pages/admin/AdminGameForm";
 import AdminGames from "../pages/admin/AdminGames";
+import AdminModeration from "../pages/admin/AdminModeration";
+import AdminUsers from "../pages/admin/AdminUsers";
 
 /**
  * Route table.
@@ -24,6 +26,7 @@ import AdminGames from "../pages/admin/AdminGames";
  *                            preserving the destination in location.state.from
  * Admin (auth + `is_staff`): /admin /admin/games /admin/games/new
  *                            /admin/games/:slug/edit /admin/categories
+ *                            /admin/users /admin/moderation
  *                            → unauthenticated to /login (same convention),
  *                            authenticated non-admin to an access-denied state
  * Unknown paths → NotFound.
@@ -54,6 +57,8 @@ export default function AppRoutes() {
             <Route path="games/new" element={<AdminGameForm />} />
             <Route path="games/:slug/edit" element={<AdminGameForm />} />
             <Route path="categories" element={<AdminCategories />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="moderation" element={<AdminModeration />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Route>

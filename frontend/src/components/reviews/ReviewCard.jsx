@@ -18,6 +18,8 @@ import { formatDateTime } from "../../utils/format";
  *   rendered below the actions (Phase 10: the review's comment panel)
  * @param {() => void} [props.onEdit] show an Edit button when provided
  * @param {() => void} [props.onDelete] show a Delete button when provided
+ * @param {import("react").ReactNode} [props.reportControl] Phase E report
+ *   control rendered for signed-in non-owners (parent decides eligibility)
  * @param {boolean} [props.confirming] render the delete confirmation row
  * @param {() => void} [props.onConfirmDelete]
  * @param {() => void} [props.onCancelDelete]
@@ -28,6 +30,7 @@ export default function ReviewCard({
   children,
   onEdit,
   onDelete,
+  reportControl,
   confirming = false,
   onConfirmDelete,
   onCancelDelete,
@@ -72,7 +75,7 @@ export default function ReviewCard({
           </Button>
         </footer>
       ) : (
-        (onEdit || onDelete) && (
+        (onEdit || onDelete || reportControl) && (
           <footer className="review-card__actions">
             {onEdit && (
               <Button variant="ghost" className="btn--small" onClick={onEdit}>
@@ -84,6 +87,7 @@ export default function ReviewCard({
                 Delete
               </Button>
             )}
+            {reportControl}
           </footer>
         )
       )}

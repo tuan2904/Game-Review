@@ -22,7 +22,22 @@ items are not implemented yet.
 | 07    | Game UI                   | ✅ Complete   |
 | 08    | Review UI                 | ✅ Complete   |
 | 09    | Admin                     | ✅ Complete   |
-| 10    | Testing and Hardening     | ⬜ Pending    |
+| 10    | Testing and Hardening     | 🚧 In progress |
+
+> **Test baseline (verified, current).** A source audit (see
+> `docs/audit/game-review-source-audit.md`) found that no test files were
+> tracked in the repository, so the per-phase test counts quoted below in
+> Phases 06–10 were not reproducible against the source. The real, reproducible
+> baseline now established by Phase A is:
+>
+> - Backend: **78 pytest tests passing** (`75` request-cycle tests across
+>   `accounts`/`games`/`reviews`/`comments`/`favorites`, plus `3` auth-throttle
+>   tests; run `DB_PORT=5432 .venv/bin/python -m pytest` from `backend/`).
+> - Frontend: **22 Vitest tests passing** (`16` in `src/api/client.test.js`,
+>   `6` in `src/contexts/AuthContext.test.jsx`; run `npm test` from `frontend/`).
+>
+> Counts in Phases 06–10 are kept as historical intent only and should not be
+> cited as current evidence.
 
 ---
 
@@ -549,11 +564,228 @@ Acceptance:
 
 ---
 
-## Phase 11 — Testing and Hardening ⬜
+## Phase 11 — Testing and Hardening 🚧
 
 - [ ] Security, permissions, validation, DB constraints, N+1 review,
       duplicated code, API consistency, error handling, frontend API handling,
       test coverage — fix only confirmed issues, no new features
+
+### Phase A — P0 Security & Test Baseline ✅
+
+- [x] Full read-only source audit recorded in
+      `docs/audit/game-review-source-audit.md` (10 sections; no source changed
+      during the audit)
+- [x] DRF throttling for auth: `apps/accounts/throttles.py`
+      (`LoginRateThrottle`/`RegisterRateThrottle`, per-IP), rates configured in
+      `config/settings.py` via `AUTH_LOGIN_THROTTLE_RATE` (`10/min`) and
+      `AUTH_REGISTER_THROTTLE_RATE` (`5/min`); scoped to those two views only —
+      no global `DEFAULT_THROTTLE_CLASSES`; documented in `.env.example`
+- [x] Backend test baseline restored: pytest + pytest-django added to
+      `requirements-dev.txt`, config in `pyproject.toml`, shared fixtures +
+      autouse throttle-cache reset in `backend/conftest.py`, per-app suites
+      under `apps/<app>/tests/` → **78 passing**
+      (accounts 16, games 24, reviews 16, comments 12, favorites 10)
+- [x] Frontend test baseline restored: `vitest`/`jsdom`/Testing Library added
+      to `package.json` with a `test` script, `test` block in `vite.config.js`,
+      `src/test/setup.js`, and suites for the API client + auth context →
+      **22 passing** (`npm test`)
+- [x] Quality gates: `ruff check`/`ruff format --check` clean,
+      `manage.py check` clean, backend pytest 78 passed; frontend
+      `node_modules` scripts `npm test` 22 passed, `npm run lint` (oxlint)
+      clean, `npm run format:check` clean, `npm run build` OK
+- [x] Docs synced to the real baseline (`README.md`, `docs/ARCHITECTURE.md`,
+      `docs/FRONTEND.md`, this plan)
+
+Remaining Phase 11 work: none — comment moderation, account/profile
+management, review aggregation and the moderation queue/reporting (Phases B,
+C, D and E below; Phase E was the optional roadmap item, implemented on
+request).
+
+### Phase B — Comment Moderation ✅
+
+- [x] Backend model: `content` capped at 2000 chars (`max_length` + DB
+      `CheckConstraint` `comment_content_max_length`) and new soft flag
+      `is_hidden` (default `False`); migration `comments.0002` only adds the
+      column + constraint (no unrelated schema changes)
+- [x] Backend filter: `apps/comments/moderation.py` — configurable,
+      case- and accent-insensitive, whole-word banned-word list
+      (`COMMENT_BANNED_WORDS` env, falls back to a short built-in default;
+      empty string disables it). Offending content → `400 errors.content`
+      with a generic message that never echoes the word
+- [x] Backend API: `is_hidden` exposed read-only; list hides hidden comments
+      from anonymous/non-staff and lets staff filter with `?is_hidden=`;
+      staff-only `POST /api/v1/comments/{id}/moderate/` hide/unhide
+- [x] Backend admin: `Comment` registered with `is_hidden` column/filter and
+      bulk hide/unhide actions
+- [x] Frontend: `moderateComment()` wrapper + `is_hidden` param/typedef;
+      comment list shows a "Hidden" badge and staff Hide/Unhide control plus
+      an all/visible/hidden filter; non-staff never receive hidden comments
+- [x] Checks: `manage.py check` clean, `makemigrations --check` clean, Ruff
+      check/format clean, backend `pytest` **78 passed** (Phase A suite intact),
+      frontend `npm test` **22 passed**, `oxlint`/`prettier --check` clean,
+      `vite build` OK
+- [x] Docs updated (`docs/API.md` comment + moderation sections, this plan)
+
+Scope note: verification is limited to the existing automated checks and
+static review; the moderation flow was not exercised in a live browser session.
+
+### Phase C — Account Management ✅
+
+- [x] Backend: `PATCH /auth/me/` updates only `first_name`/`last_name`
+      (`ProfileUpdateSerializer` exposes exactly those two fields — `email`,
+      `is_staff`, `is_superuser`, `is_active` are unreachable from the
+      payload, so no self-service privilege escalation)
+- [x] Backend: staff-only `GET /api/v1/admin/users/` (search on
+      email/first/last name, ordering allowlist, standard pagination, safe
+      fields only — never password/`is_superuser`) and
+      `POST /api/v1/admin/users/{id}/status/` to lock/unlock via `is_active`
+      (staff-only; 404 unknown id; self-lock refused with 400)
+- [x] Lock behaviour reuses the existing auth stack: a deactivated user is
+      rejected `401` on every subsequent authenticated request (JWT
+      `is_active` check) and login keeps the generic `401` — no schema change
+- [x] Frontend: `Profile` page rebuilt (first/last name form, inline server
+      field errors, success status, `updateUser()` keeps AuthContext in
+      sync); new `updateProfile()` + `src/api/adminUsers.js` wrappers; new
+      `/admin/users` page (search, pagination, Active/Locked badges,
+      reversible lock/unlock, own row not actionable); dashboard card + route
+      added
+- [x] Checks: `manage.py check` clean, Ruff check/format clean, backend
+      `pytest` **78 passed** (Phase A suite intact, no tests added per phase
+      rules), frontend `npm test` **22 passed**, `oxlint`/`prettier --check`
+      clean, `vite build` OK
+- [x] Docs updated (`docs/API.md` profile + admin user sections, `docs/FRONTEND.md`,
+      `docs/ARCHITECTURE.md`, `docs/FLOW.md`, this plan)
+- [x] **Final review (Phase C) — API-level runtime verification:** all Phase C
+      security scenarios executed against an **ephemeral PostgreSQL test DB**
+      (created and destroyed by the run itself; the shared dev DB was not
+      touched) using the Django test client — **41/41 checks passed**:
+      profile allowlist (crafted `is_staff`/`is_superuser`/`is_active`/
+      `password`/`email`/`id` payload is ignored, password hash unchanged),
+      over-length name → `400 errors.first_name`, admin endpoints `401`/`403`,
+      list payload never contains `password`/`is_superuser`, search +
+      ordering allowlist, lock/unlock `200`, self-lock `400`, unknown id `404`,
+      missing/non-boolean `is_active` → `400`, and for a locked account: the
+      pre-lock access token is rejected `401` (even on public routes),
+      `POST /auth/login/` returns the generic `401 Invalid email or password`,
+      `POST /auth/refresh/` returns `401`, unlock restores full access.
+      Temporary verification script was deleted after the run (not a test
+      file, nothing committed).
+
+Scope note: no new tests and no migrations (phase rules forbid adding tests;
+the phase needs no schema change). Backend behaviour was verified at runtime
+against an ephemeral test DB; the UI flows were **not** exercised in a live
+browser session (frontend 401-after-lock handling covered by the existing
+`client.test.js` "clears the session when the refresh token is rejected" /
+`AuthContext.test.jsx` "clears the session when restore fails" cases plus
+static review of the refresh interceptor chain).
+
+### Phase D — Review Aggregation & Discovery ✅
+
+- [x] Backend: `with_review_stats()` (in `apps/games/views.py`) annotates
+      `average_rating` (`Avg("reviews__rating")`) + `review_count`
+      (`Count("reviews")`) in a **single** `annotate()` — one join for both
+      (no fan-out), applied to the game list, detail and update/delete
+      querysets. No schema change, no denormalized columns, no write-path
+      bookkeeping; values are always current.
+- [x] Backend: `GameSerializer` exposes `average_rating` (read-only,
+      `null` when unreviewed) and `review_count` (read-only, `0`) with safe
+      defaults, so responses built from a non-annotated instance (a freshly
+      created game) return `null`/`0` instead of failing.
+- [x] Backend: review list gained an ordering allowlist —
+      `ordering_fields = ["created_at", "rating"]`, default `-created_at`,
+      mounted through `OrderingFilter` only (reviews are not searchable) —
+      plus an implicit `id` tie-break so equal ratings paginate without
+      overlap or omission.
+- [x] Frontend: `GameCard` shows `★ 4.5 · 12 reviews` / `★ No reviews yet`
+      (the favorites payload carries no aggregates → those cards render no
+      rating line instead of inventing data); `GameDetail` adds a **Rating**
+      fact; `GameReviews` gained a server-side **Sort by** control that
+      resets to page 1 (result key covers slug + page + ordering + reload).
+      Types (`Game.average_rating`, `Game.review_count`) and the
+      `listGameReviews` JSDoc updated.
+- [x] Checks: `manage.py check` clean, `makemigrations --check` clean (no
+      model change), Ruff check/format clean, backend `pytest`
+      **78 passed** (Phase A suite intact, no tests added per phase rules),
+      frontend `npm test` **22 passed**, `oxlint`/`prettier --check` clean,
+      `vite build` OK
+- [x] **Runtime verification (ephemeral PostgreSQL test DB, script deleted
+      after the run): 21/21 checks** — aggregates correct for 0/1/2/3
+      reviews including `4.5` half-point precision; list and detail agree;
+      query count independent of page size (**2 queries** at
+      `page_size=1` and `page_size=100` → no N+1); create →
+      `null`/`0`, PATCH → live values; favorites payload unchanged;
+      ordering `rating` / `-rating` / `created_at` / default all correct;
+      unknown `ordering` ignored; tied ratings keep a stable `id` order with
+      no overlap across pages; unknown slug → `404`.
+- [x] Docs updated (`docs/API.md` game aggregates + review ordering,
+      `docs/FRONTEND.md`, `docs/ARCHITECTURE.md`, `docs/FLOW.md`, this plan)
+
+Scope note: no new tests and no migrations (phase rules; the feature needs no
+schema change). Games are **not** sortable by rating — the roadmap asks for
+review sorting only. Verification is API-level: the sort control and rating
+display were not exercised in a live browser session.
+
+### Phase E — Moderation Queue & Reporting ✅
+
+- [x] Backend: new `apps/reports/` app — `Report` model with exactly one
+      target (`report_exactly_one_target` DB `CHECK`), conditional unique
+      constraints per reporter+target (duplicates mapped to `409` via a
+      savepoint), `reporter` `PROTECT` / targets `CASCADE` / `resolved_by`
+      `SET_NULL`; migration `reports.0001_initial` created only — the shared
+      dev database is **never** migrated by phase work.
+- [x] Backend: report submission `POST /reviews/{id}/report/` and
+      `POST /comments/{id}/report/` (`IsAuthenticated`) — target from the
+      URL through `Game.objects.visible_to()` (plus non-staff cannot reach
+      hidden comments), body carries `reason` (choices) + optional `details`
+      ≤ 500 only (client-supplied `reporter`/`status` are ignored); staff
+      queue `GET /admin/reports/` (`ListQueryMixin`: `?status=`, `?search=`,
+      ordering allowlist) and `POST /admin/reports/{id}/resolve/` (stamps
+      `resolved_by`/`resolved_at`, repeat → `409`).
+- [x] Backend: global moderation lists — `GET /admin/reviews/` (every game
+      incl. inactive; search content/author/game; ordering
+      `created_at`/`rating`) and `GET /admin/comments/` (every comment incl.
+      hidden; search; shared `?is_hidden=` normalization helper with the
+      Phase B per-review list — unknown value → empty list), both staff-only;
+      `GET /admin/summary/` in `apps/common` — 7 live count queries
+      (games/categories/users/reviews/comments/favorites/reports, splits via
+      `Count(..., filter=Q(...))`).
+- [x] Frontend: `ReportControl` inline report form on every review/comment a
+      signed-in non-owner can flag (reason select + optional details;
+      success/`409` → "Reported" marker; other failures recoverable);
+      `/admin/moderation` page with Reports/Reviews/Comments tabs (per-tab
+      search/filter/page state so tab switches never leak filters, keyed
+      fetch + `AbortController`, resolve action, two-step review delete,
+      reversible comment hide/unhide); dashboard renders seven live counters
+      from `/admin/summary/` + a Moderation card. Wrappers
+      `src/api/reports.js` + `src/api/adminModeration.js`; typedefs
+      `Report`/`AdminSummary`/`AdminComment`.
+- [x] Checks: `manage.py check` clean, `makemigrations --check` clean (only
+      the new `reports.0001` migration exists), Ruff check/format clean,
+      backend `pytest` **78 passed** (Phase A suite intact, no tests added
+      per phase rules), frontend `npm test` **22 passed**, `oxlint` /
+      `prettier --check` clean, `vite build` OK
+- [x] **Runtime verification (ephemeral PostgreSQL test DB, script deleted
+      after the run): 78/78 checks** — `401`/`403` on every staff endpoint;
+      submission `201` with safe reporter + nested target and game; spoofed
+      `reporter`/`status` fields ignored; invalid/missing reason and
+      501-char details → `400`; duplicate report → `409`; inactive-game
+      review and hidden comment → `404` for users, allowed for staff;
+      queue `status`/`search`/unknown-ordering behavior; resolve →
+      `RESOLVED` + resolver + timestamp, repeat → `409`; admin review/comment
+      lists incl. `is_hidden` normalization (`true`/`false`/`xyz` →
+      1/2/0 rows) and the public hidden-comment regression; summary counts
+      exactly match fixtures; DB `CHECK`/unique constraints raise
+      `IntegrityError` (both/neither targets, duplicate reporter); deleting
+      content cascades its reports.
+- [x] Docs updated (`docs/API.md` Report + Admin moderation API + inventory,
+      `docs/FRONTEND.md`, `docs/ARCHITECTURE.md`, `docs/FLOW.md`, this plan)
+
+Scope note: no new tests and no new dependencies (phase rules). The
+`reports.0001` migration is **not** applied to the shared dev database —
+runtime verification used an ephemeral test DB that was destroyed afterwards,
+so the report control and moderation queue were not exercised in a live
+browser session. Flat roles are unchanged (any `is_staff` user can resolve
+reports and moderate content).
 
 ---
 

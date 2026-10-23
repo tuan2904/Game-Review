@@ -92,6 +92,11 @@ export function AuthProvider({ children }) {
     setStatus("unauthenticated");
   }, []);
 
+  /** Replace the cached user (e.g. after a profile update) without a refetch. */
+  const updateUser = useCallback((nextUser) => {
+    setUser(nextUser);
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -101,8 +106,9 @@ export function AuthProvider({ children }) {
       login,
       register,
       logout,
+      updateUser,
     }),
-    [user, status, login, register, logout],
+    [user, status, login, register, logout, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

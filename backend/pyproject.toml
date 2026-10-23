@@ -11,3 +11,10 @@ exclude = [".venv", "migrations", "staticfiles"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["."]
+testpaths = ["apps"]
+python_files = ["test_*.py"]
+addopts = "-ra"

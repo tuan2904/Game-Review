@@ -4,7 +4,8 @@ import { buildParams, client } from "./client";
  * Review endpoints (docs/API.md — Review API).
  *
  * Contracts verified against the backend (tests + views):
- *  - GET    /games/{slug}/reviews/  public, paginated, `-created_at`
+ *  - GET    /games/{slug}/reviews/  public, paginated, `?ordering=` allowlist
+ *    (`-created_at` default, `created_at`, `rating`, `-rating`)
  *  - POST   /games/{slug}/reviews/  auth required; payload `{rating, content}`
  *    only (user/game come from token + URL; forged ids are ignored).
  *    201 created; duplicate → 409 "You have already reviewed this game.";
@@ -20,11 +21,12 @@ import { buildParams, client } from "./client";
  */
 
 /**
- * List reviews for a game (newest first, paginated — no other query params
- * are supported by the backend).
+ * List reviews for a game — paginated, sorted by the server-side `ordering`
+ * allowlist (default `-created_at`; also `created_at`, `rating`, `-rating`
+ * with an `id` tie-break). Any other parameter is ignored by the backend.
  *
  * @param {string} slug game slug
- * @param {Object} [params]
+ * @param {Object} [params] `{ page, page_size, ordering }`
  * @param {import("axios").AxiosRequestConfig} [config] optional request config
  *   (e.g. `signal` for cancellation)
  * @returns {Promise<import("../types").PaginatedReviews>}

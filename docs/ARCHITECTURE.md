@@ -185,8 +185,14 @@ framework-native, no custom token code:
   single validated write — a service would be a pass-through (plan rule:
   layers only when there is real logic to separate).
 - `register/login/refresh/logout` are public (`AllowAny`); `/auth/me/` is
-  `IsAuthenticated`. The login serializer keeps SimpleJWT's token issuing and
-  only adds safe user data plus a generic failure message.
+  `IsAuthenticated` for both `GET` (read) and `PATCH` (profile update — only
+  `first_name`/`last_name` are writable, so `email`/staff flags are
+  unreachable from the payload). The login serializer keeps SimpleJWT's token
+  issuing and only adds safe user data plus a generic failure message.
+- User administration is staff-only: `GET /admin/users/` (search + pagination,
+  safe fields only) and `POST /admin/users/{id}/status/` (lock/unlock via
+  `is_active`, `IsAdmin`). Locking takes effect immediately — the JWT auth
+  class rejects deactivated users with `401` on every later request.
 - Failed login (wrong password, unknown email, or inactive account) always
   returns the same `401 "Invalid email or password"` — no account
   enumeration. Duplicate email → `400` field error, backstopped by the
@@ -194,8 +200,9 @@ framework-native, no custom token code:
 - User identity is email (`USERNAME_FIELD = "email"`, no username field);
   `UserManager` normalizes to lowercase and is the only password-hashing
   entry point (`create_user`/`create_superuser`).
-- Rate limiting on login/register is not implemented; recorded as a future
-  production concern (Phase 11), not an MVP item.
+- Rate limiting uses **scoped** DRF throttles (`login` `10/min`, `register`
+  `5/min`, env-overridable) applied only to those two views — no global
+  `DEFAULT_THROTTLE_CLASSES`.
 
 ## Game & Category Conventions
 
@@ -253,10 +260,18 @@ application service.
 - **Read-only edges:** `user`, `game`, `id`, `created_at`, `updated_at` are
   read-only; identity comes from the token, the game from the URL, so forged
   IDs in payloads are ignored.
-- **No denormalized aggregation:** `Game` carries no `average_rating` /
-  `review_count` columns. Ratings are computed on demand (or denormalized
-  later with a measured need) — the plan's aggregation item was explicitly
-  deferred past Phase 04 to avoid write-path bookkeeping without a consumer.
+- **Aggregation without denormalized columns (Phase D):** `Game` still has no
+  `average_rating` / `review_count` columns — read querysets annotate them
+  via `with_review_stats()` (`Avg` + `Count` in a **single** `annotate()` so
+  both share one join and a page stays one query). Values are therefore
+  always current and the write path keeps no bookkeeping. The serializer
+  declares both fields read-only with safe defaults (`null` / `0`) so a
+  response built from a non-annotated instance (a freshly created game)
+  cannot fail.
+- **Review ordering (Phase D):** the review list is sortable server-side
+  (`ordering_fields = ["created_at", "rating"]`, default `-created_at`),
+  allowlisted through DRF's `OrderingFilter` (no review search), with an
+  implicit `id` tie-break so equal ratings paginate deterministically.
 - **Permissions:** list/create rely on the global
   `IsAuthenticatedOrReadOnly` (reads public, create 401 when anonymous);
   update/delete use `IsAdminOrOwner` (owner or `is_staff`).
@@ -316,6 +331,46 @@ is either a DB constraint or a single scoped query:
   `games/{slug}/favorite/`, `me/favorites/` — segment counts and prefixes
   differ from existing routes, so no collisions.
 
+## Report & Moderation Conventions (Phase 11E)
+
+`apps/reports/` is a regular domain app (`View → Serializer → ORM`, no
+service layer — every rule is a DB constraint or one scoped query), and the
+staff moderation lists reuse `ListQueryMixin` like every other list:
+
+- **Report model — exactly one target:** `review` XOR `comment`, enforced
+  by the DB `CheckConstraint` `report_exactly_one_target` (last line of
+  defence behind the view, which always constructs the row with one target).
+  Two conditional `UniqueConstraint`s (`reporter+review`,
+  `reporter+comment`) make duplicate reporting impossible even under races —
+  the create path wraps `Report.objects.create` in `transaction.atomic()` and
+  maps `IntegrityError` to `409` (same pattern as the
+  one-review-per-game rule). FK policy: `reporter` `PROTECT` (reports never
+  outlive their author silently), both targets `CASCADE` (deleting the
+  content deletes its reports), `resolved_by` `SET_NULL`.
+- **Report creation is URL-scoped:** the target comes from the path and is
+  visibility-checked with `Game.objects.visible_to(user)` (reviews) plus
+  `is_hidden=False` for non-staff (comments); the body carries only
+  `reason` (choices) and optional `details` (≤ 500), so client-supplied
+  `reporter`/`status` fields are ignored rather than trusted.
+- **Moderation lists:** `ReportListView`, `AdminReviewListView` and
+  `AdminCommentListView` all mix in `ListQueryMixin` (search + ordering
+  allowlists) behind `IsAdmin`; comment `?is_hidden=` normalization is one
+  shared helper (`apply_hidden_filter` in `apps/comments/views.py`) used by
+  both the per-review list (Phase B) and the global queue (Phase E), and an
+  unrecognized value yields an **empty** list instead of dropping the
+  filter — a typo must never widen a moderation view.
+- **Summary:** `AdminSummaryView` (`apps/common/views.py`) issues one
+  `aggregate()` per model using `Count("pk", filter=Q(...))` for the
+  splits — 7 count queries in a single request. Counts are always live: no
+  cached totals, consistent with the no-denormalization stance of Phase D.
+- **Resolution:** the staff-only transition `PENDING → RESOLVED` stamps
+  `resolved_by` + `resolved_at`; a repeat resolve is `409` (explicit state,
+  not silently idempotent).
+- **Routing:** `reviews/{id}/report/`, `comments/{id}/report/`,
+  `admin/reports/`, `admin/reports/{id}/resolve/` (in `apps/reports/urls.py`)
+  plus `admin/reviews/`, `admin/comments/` and `admin/summary/` on the
+  owning apps — all under the existing `/api/v1/` prefix; no collisions.
+
 ## Transactions Convention
 
 - Use `transaction.atomic()` when a business operation performs **multiple
@@ -336,7 +391,8 @@ is either a DB constraint or a single scoped query:
   to-many; annotate aggregates (`Avg`, `Count`) instead of looping in Python.
 - Filter and paginate at the database level (pagination does this by default).
 - Always set an explicit `ordering` on paginated lists — unstable ordering can
-  skip or duplicate rows across pages.
+  skip or duplicate rows across pages. When a sort key has many equal values
+  (e.g. rating), append a unique tie-break (`id`) after the chosen field.
 - Avoid loading full tables to filter in Python.
 - Do not prematurely optimize; fix confirmed hotspots.
 
@@ -358,17 +414,21 @@ is either a DB constraint or a single scoped query:
 
 ## Testing Conventions
 
-- pytest + pytest-django, PostgreSQL test database (`python -m pytest`).
-- Shared fixtures (`api_client`, `make_user` via the accounts `UserManager`,
-  `user`, `other_user`, `admin`, `make_category`/`category`,
-  `make_game`/`game`, `make_review`/`review`) live in `backend/conftest.py`;
-  module-specific factories (`make_comment`/`comment`,
-  `make_favorite`/`favorite`) live in their app's `tests/conftest.py`.
-- Tests verify behavior through the request → response cycle, not private
-  method calls.
-- Infrastructure tests use a **test-only URLconf**
-  (`apps/common/tests/urls.py` + `views.py`) so production URLs stay clean;
-  tests enable it with the `test_urls` fixture.
+- pytest + pytest-django, PostgreSQL test database (`python -m pytest` from
+  `backend/`; config in `backend/pyproject.toml`). The suite needs a reachable
+  database — set `DB_PORT` (and other `DB_*` vars) via the environment to
+  override `backend/.env` when needed.
+- All shared fixtures (`api_client`, `user_client`/`other_client`/`admin_client`,
+  `make_user`/`user`/`other_user`/`admin`, `make_category`/`category`,
+  `make_game`/`game`, `make_review`/`review`, `make_comment`, `make_favorite`)
+  live in `backend/conftest.py`; an autouse fixture clears the DRF throttle
+  cache between tests. Tests are grouped per app under `apps/<app>/tests/`.
+- Tests verify behavior through the request → response cycle against the real
+  versioned API (`/api/v1/…`) using DRF's `APIClient`, not private method calls.
+- Auth throttling is scoped per view (not global): `login` defaults to `10/min`
+  and `register` to `5/min`, overridable with `AUTH_LOGIN_THROTTLE_RATE` /
+  `AUTH_REGISTER_THROTTLE_RATE`. `apps/accounts/tests/test_throttling.py`
+  asserts the 429 response.
 - Service-level business behavior (later phases) may be tested by calling the
   service directly when that is clearer.
 - Cover reusable infrastructure and important business rules; do not chase

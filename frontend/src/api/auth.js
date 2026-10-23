@@ -9,6 +9,7 @@ import { client, getRefreshToken, setAccessToken, setRefreshToken } from "./clie
  *   POST /api/v1/auth/refresh/   → 200 data: { access, refresh }  (rotated)
  *   POST /api/v1/auth/logout/    → 200 data: {}                   (blacklists refresh)
  *   GET  /api/v1/auth/me/        → 200 data: User
+ *   PATCH /api/v1/auth/me/       → 200 data: User (first_name/last_name only)
  *
  * Tokens are stored as soon as they are received: access in memory,
  * refresh in sessionStorage (see docs/FRONTEND.md).
@@ -35,6 +36,17 @@ export async function login({ email, password }) {
 /** @returns {Promise<import("../types").User>} */
 export async function fetchMe() {
   return client.get("/auth/me/");
+}
+
+/**
+ * Update the current user's display name. Only `first_name`/`last_name` are
+ * accepted by the server; email/permissions are read-only.
+ *
+ * @param {{ firstName?: string, lastName?: string }} profile
+ * @returns {Promise<import("../types").User>} 200 "Profile updated successfully"
+ */
+export async function updateProfile({ firstName, lastName }) {
+  return client.patch("/auth/me/", { first_name: firstName, last_name: lastName });
 }
 
 /**

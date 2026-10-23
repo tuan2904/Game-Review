@@ -31,11 +31,14 @@ allow the frontend origin (CORS defaults to `http://localhost:5173`).
 | Production build  | `npm run build` (Vite)             |
 
 Tests run in `jsdom` (`vite.config.js` → `test`), setup in
-`src/test/setup.js` (jest-dom matchers, DOM cleanup, token/sessionStorage
-reset between tests). **Tests never hit the network** — they swap
-`client.defaults.adapter` for the shared fake adapter
-(`src/test/helpers.js`: adapter + envelope/pagination builders) with verified
-payload fixtures (`src/test/fixtures.js`).
+`src/test/setup.js` (jest-dom matchers, DOM cleanup, access-token/sessionStorage
+reset between tests). **Tests never hit the network** — each test swaps
+`client.defaults.adapter` for a local fake adapter that drives the real
+interceptor pipeline with envelope/stub bodies. Current suites:
+`src/api/client.test.js` (envelope unwrap, error normalization, Bearer header,
+single-flight 401 refresh + retry, session clearing) and
+`src/contexts/AuthContext.test.jsx` (unauthenticated start, login/logout,
+session restore).
 
 ## Module Layout
 
@@ -44,19 +47,20 @@ frontend/src/
 ├── api/            # Axios client + one module per backend resource
 │   ├── client.js   # envelope unwrap, ApiError, tokens, refresh logic
 │   ├── auth.js     # register/login/me/logout
-│   └── …           # games, reviews, comments, favorites wrappers
+│   └── …           # games, reviews, comments, favorites, reports, admin* wrappers
 ├── components/
 │   ├── common/     # Button, Input, Pagination, Loading, ErrorMessage, EmptyState, PageContainer
 │   ├── comments/   # ReviewComments (lazily expanded panel), CommentForm, CommentItem
 │   ├── favorites/  # FavoriteToggle (shared add/remove control)
 │   ├── games/      # GameCard (listing card, optional action slot)
 │   ├── layouts/    # AppLayout (header/nav/footer, auth-aware links)
+│   ├── moderation/ # ReportControl (inline review/comment report form)
 │   ├── reviews/    # GameReviews section + ReviewCard (with comments slot)
 │   └── routes/     # ProtectedRoute (auth gate)
 ├── contexts/       # AuthContext (auth state), FavoritesContext (shared favorite set)
-├── pages/          # Route components (Home/Profile remain badged placeholders)
+├── pages/          # Route components (Home remains a badged placeholder)
 ├── routes/         # AppRoutes — route table
-├── test/           # vitest setup + shared fake adapter, fixtures
+├── test/           # vitest setup (jest-dom, cleanup, token reset)
 ├── types/          # JSDoc typedefs mirroring API shapes (no TypeScript)
 └── utils/          # date formatting helpers
 ```
@@ -107,13 +111,15 @@ Consequences:
 ## Auth State (`src/contexts/AuthContext.jsx`)
 
 `AuthProvider` owns `{ user, status, isAuthenticated, isLoading, login,
-register, logout }`; `useAuth()` consumes it. `status` starts as `"loading"`
-only when a stored refresh token exists.
+register, logout, updateUser }`; `useAuth()` consumes it. `status` starts as
+`"loading"` only when a stored refresh token exists.
 
 - `login(email, password)` → `POST /auth/login/`, stores tokens, sets user.
 - `register(...)` → `POST /auth/register/` then **auto-login** (the register
   endpoint returns no tokens; on login failure the account still exists and
   the page falls back to an error linking to `/login`).
+- `updateUser(nextUser)` replaces the cached user without a refetch — used by
+  the Profile page after `PATCH /auth/me/` so the header stays in sync.
 - No Redux/Zustand — auth is the only shared client state, context is enough.
 
 ## Routing (`src/routes/AppRoutes.jsx`)
@@ -132,12 +138,25 @@ only when a stored refresh token exists.
 | `/admin/games/new`   | AdminGameForm   | Admin   |
 | `/admin/games/:slug/edit` | AdminGameForm | Admin |
 | `/admin/categories`  | AdminCategories | Admin   |
+| `/admin/users`       | AdminUsers      | Admin   |
+| `/admin/moderation`  | AdminModeration | Admin   |
 | `*`                  | NotFound        | —       |
 
 `ProtectedRoute` shows a loader while the session restores, redirects to
 `/login` with `location.state.from` preserved (Login returns the user to the
 originally requested page after a successful sign-in). The `/admin` subtree
 is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
+
+## Profile (Phase C — `src/pages/Profile.jsx`)
+
+- Protected page that lets the signed-in user edit their display name via
+  `PATCH /auth/me/` (`updateProfile()` in `src/api/auth.js`); only
+  `first_name`/`last_name` are editable — the server rejects any attempt to
+  change `email`/permissions, and the form never offers them.
+- Server field errors (`errors.first_name` / `errors.last_name`) render
+  inline; other failures show a recoverable alert. Success replaces the
+  AuthContext user with the response (`updateUser`) and shows a status
+  message — no page reload, no extra request.
 
 ## Games Browsing (Phase 07)
 
@@ -167,6 +186,11 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
   non-staff only ever see `ACTIVE` games, so it would be meaningless for the
   public UI (status filtering lives in `/admin/games`, Phase 09). Cards render
   `status` only as an `Inactive` badge when present (staff view).
+- **Rating summary (Phase D):** every card that receives the
+  `average_rating`/`review_count` fields (list + detail) shows
+  `★ 4.5 · 12 reviews`, or `★ No reviews yet` for an unreviewed game.
+  The favorites payload carries neither field, so those cards deliberately
+  render no rating line instead of inventing `0 reviews`.
 
 ### Detail (`/games/:slug`, `src/pages/GameDetail.jsx`)
 
@@ -175,7 +199,9 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
   retryable error. `Back to games` link + browser back/forward both work.
 - Fields shown are the verified serializer output only (`name`, `category`,
   `developer`, `publisher`, `release_date`, `description`, `status`,
-  `created_at`). No cover image is rendered when `cover_image` is empty —
+  `created_at`) plus the Phase D **Rating** fact in the facts grid
+  (`★ 4.5 · 12 reviews`, or `No reviews yet`) straight from the same payload.
+  No cover image is rendered when `cover_image` is empty —
   nothing is fabricated.
 - The reviews section (display + Phase 08 write workflows) lives in
   `src/components/reviews/GameReviews.jsx` — see
@@ -203,8 +229,13 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
   (same `AbortController` + drop-stale + derived-loading pattern as the
   listing) and its own loader/error/empty states, so a reviews failure
   never affects the game details.
-- `GET /api/v1/games/{slug}/reviews/?page&page_size=12` (newest first) with
-  the shared `Pagination`.
+- `GET /api/v1/games/{slug}/reviews/?page&page_size=12&ordering=…` with the
+  shared `Pagination`.
+- **Sort control (Phase D):** a labelled `Sort by` select (newest / oldest /
+  highest rated / lowest rated) switches the server-side `ordering`
+  allowlist; changing it resets to page 1 and the result key (slug + page +
+  ordering + reload) drops stale responses exactly like the listing. It only
+  renders when the list is non-empty — there is nothing to sort otherwise.
 
 ### Form (`src/components/reviews/ReviewForm.jsx`)
 
@@ -267,12 +298,17 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
   surfaces as a recoverable 403 when the server denies it. `AdminLayout` nav
   shows the `Admin` link only for `user?.is_staff === true`.
 
-### Modules (navigation-only dashboard)
+### Modules (dashboard + navigation)
 
-- `AdminDashboard` (`/admin`) — cards linking to the two supported modules
-  plus a muted note listing what the API cannot do. **No API calls and no
-  fabricated metrics**: the backend has no dashboard/statistics summary
-  endpoint (verified against source in Phase 09).
+- `AdminDashboard` (`/admin`) — seven live counters fetched from
+  `GET /admin/summary/` (games, categories, users, reviews, comments,
+  pending reports, favorites — each with a compact hint line) plus cards
+  linking to the four modules (Moderation, Games, Categories, Users). A
+  failed summary renders a recoverable inline error while the cards stay
+  usable; the page never fabricates metrics (Phase 11E).
+- `AdminModeration` (`/admin/moderation`, Phase 11E) — the Reports /
+  Reviews / Comments workspace; see
+  [Moderation & Reporting](#moderation--reporting-phase-11e) below.
 - `AdminGames` (`/admin/games`) — list over `GET /games/` (staff see every
   status; search submitted on demand, supported `status` filter, server-side
   pagination). Row actions: Edit (→ `/admin/games/:slug/edit`), a reversible
@@ -292,21 +328,28 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
   (`PATCH /categories/{id}/`), two-step delete. `POST /categories/` sends
   `{name}` only (slug omitted unless explicitly typed); 409 (games reference
   the category) renders a recoverable alert, 404 reconciles the list.
+- `AdminUsers` (`/admin/users`, Phase C) — `GET /admin/users/` list with
+  submit-on-demand search and server pagination; columns show email, name,
+  Staff/User and Active/Locked badges. Row action is a reversible
+  `POST /admin/users/{id}/status/` lock/unlock (`{is_active}`); the current
+  admin's own row shows "You" instead of an action (the backend also refuses
+  to lock the caller). Failures render a recoverable alert; wrappers live in
+  `src/api/adminUsers.js`.
 
 ### Decisions & limitations (backend-verified)
 
-- **No review moderation module**: the backend has no global cross-game
-  review list endpoint. Staff can already delete any review from the game
-  detail page (Phase 08 `is_staff` controls); a moderation queue is not
-  implementable against the current API and is documented rather than faked.
-- **No user management**: `/auth/*` exposes only
-  register/login/refresh/logout/me — no user list/role endpoints exist.
-- **No dashboard metrics**: no summary/statistics endpoint exists, so the
-  dashboard renders navigation only (no invented counts or charts).
+- **User management is deliberately limited**: Phase C added the user list and
+  lock/unlock only. There is still **no role/grant editing** (`is_staff` is
+  never writable), **no password reset** and **no account deletion** — those
+  endpoints do not exist, so the UI does not offer them.
+- **No historical analytics**: `/admin/summary/` returns point-in-time totals
+  only — no trends, charts or per-period comparisons (no time-series
+  endpoint exists).
 - Admin list fetches use the shared keyed-result + `AbortController` pattern
   (stale responses dropped, loading/error derived from the result key) and
-  reuse the existing wrappers in `src/api/games.js` (JSDoc updated with the
-  verified request/response contracts).
+  reuse the existing wrappers in `src/api/games.js`,
+  `src/api/adminUsers.js` and `src/api/adminModeration.js` (JSDoc documents
+  the verified request/response contracts).
 
 ## Comments & Favorites (Phase 10)
 
@@ -318,27 +361,34 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
   expanded**, keeping a listing of N reviews at zero comment cost. The toggle
   exposes `aria-expanded`/`aria-controls` (`useId`).
 - The list uses the shared keyed-result + `AbortController` pattern
-  (`key = reviewId|page|reloadKey`): effects only set state from async
-  callbacks, responses arriving after `signal.aborted` are dropped, and
+  (`key = reviewId|page|reloadKey|activeFilter`): effects only set state from
+  async callbacks, responses arriving after `signal.aborted` are dropped, and
   loading/error are derived by comparing result keys. Every mutation
-  (create/edit/delete) triggers a refresh of the same keyed fetch.
+  (create/edit/delete/moderate) triggers a refresh of the same keyed fetch.
 - Endpoints (docs/API.md — Comment API): `GET|POST /reviews/{id}/comments/`
-  (paginated `page_size=12`, newest first), `PATCH|DELETE /comments/{id}/`.
+  (paginated `page_size=12`, newest first), `PATCH|DELETE /comments/{id}/`,
+  and staff-only `POST /comments/{id}/moderate/`.
   A comment failure renders a recoverable **Couldn't load comments** error
   inside the panel only — the game and its reviews are never affected.
 - `CommentForm` mirrors `ReviewForm`: single `content` field, client
   validation matching the backend (trimmed non-blank → "Write a comment."),
-  server field errors (`errors.content`) inline, general `ApiError.message`
-  as a form-level alert, submit disabled while pending, input kept on
-  failure and cleared on success (edit mode unmounts the form).
+  server field errors (`errors.content`) inline — this covers over-length
+  (> 2000) and banned-word 400s — general `ApiError.message` as a form-level
+  alert, submit disabled while pending, input kept on failure and cleared on
+  success (edit mode unmounts the form).
 - `CommentItem` renders the verified payload only (`content`,
-  `author {id, first_name, last_name}`, `created_at`/`updated_at`); an
-  `updated_at !== created_at` shows a static "(edited)" marker. Edit/Delete
+  `author {id, first_name, last_name}`, `is_hidden`,
+  `created_at`/`updated_at`); an `updated_at !== created_at` shows a static
+  "(edited)" marker and `is_hidden: true` shows a "Hidden" badge. Edit/Delete
   render only when the parent passes them — the parent computes ownership as
   `user.is_staff || comment.author.id === user.id` (server `IsAdminOrOwner`
   is authoritative). Delete is a two-step inline confirmation; failures
   render a recoverable **Comment action failed** alert and restore the idle
   controls, while a 404 silently reconciles (refresh, no error).
+- Staff moderation (Phase B): staff get a Hide/Unhide control per comment and
+  an all/visible/hidden filter; the API never returns hidden comments to
+  non-staff, so ordinary users are unaffected. Moderating a comment refreshes
+  the current filtered list.
 - Signed out → the public list still renders with a "Log in to comment."
   prompt linking to `/login` with `state.from` preserved; there is no form.
 
@@ -386,6 +436,67 @@ is wrapped in `AdminRoute` (see [Admin UI](#admin-ui-phase-09)).
 - Comment/favorite identity, ownership and duplicates are enforced
   server-side (`IsAuthenticatedOrReadOnly`, `IsAdminOrOwner`, 409 on
   duplicate favorite); the client mirrors rules for UX only.
+
+## Moderation & Reporting (Phase 11E)
+
+### Report control (`src/components/moderation/ReportControl.jsx`)
+
+- An inline ghost **Report** button appears on every review
+  (`GameReviews` → `ReviewCard`) and comment (`ReviewComments` →
+  `CommentItem`) the current user may flag: signed in, **not** the author,
+  and **not** staff (staff moderate from the admin queue instead). Guests
+  never see it — the parent passes the control as a prop, so the cards stay
+  presentational.
+- Self-contained local state (the list never refetches): collapsed → the
+  button; open → reason select + optional details input (≤ 500 chars) +
+  submit/cancel, matching the two-step inline-confirmation pattern; success
+  → a quiet "Reported" marker. A `409` ("already reported") renders the same
+  marker, while other failures show a recoverable inline error and keep the
+  form open.
+- The payload is `{reason, details}` only — the target id is the URL
+  (`POST /reviews|comments/{id}/report/`); reason labels mirror
+  `REPORT_REASONS` in `src/api/reports.js`.
+
+### Admin workspace (`src/pages/admin/AdminModeration.jsx`, `/admin/moderation`)
+
+- Three tabs — Reports / Reviews / Comments — each keeping its **own**
+  search, extra filter (report status / comment visibility) and page state,
+  so switching tabs never leaks a filter into the wrong list (the search box
+  buffer re-syncs on switch). One keyed fetch + `AbortController` per tab
+  drops stale responses; loading/error derive from the result key.
+- Reports tab: reason (+ details excerpt), reported content with a game
+  link, reporter, Pending/Resolved badge (resolver shown once resolved),
+  and a Resolve action on pending rows — a `409` (resolved elsewhere) just
+  refreshes the row instead of erroring.
+- Reviews tab: rating, content excerpt, author, game link, and a two-step
+  delete calling the existing `DELETE /reviews/{id}/` (404 reconciles).
+- Comments tab: content, author, game, Visible/Hidden badge, and a
+  reversible Hide/Unhide via the existing
+  `POST /comments/{id}/moderate/`.
+- Wrappers: `src/api/adminModeration.js` (summary, queue, resolve, global
+  lists) and `src/api/reports.js` (user-facing submit). Payload shapes are
+  typed in `src/types/index.js` (`Report`, `AdminSummary`, `AdminComment`,
+  `PaginatedReports`, `PaginatedAdminComments`).
+
+### Dashboard metrics (`AdminDashboard`)
+
+- Fetches `GET /admin/summary/` once per mount (reload = retry) and renders
+  seven live counters above the module cards, plus a **Moderation** card.
+  The summary failure is isolated: an inline `ErrorMessage` with retry, while
+  navigation remains usable.
+
+### Decisions & limitations (backend-verified)
+
+- Report reasons are a fixed allowlist (mirrors `Report.Reason`) — no
+  user-defined categories, no report threads, and no reporter identity in
+  the target's UI (staff see it only in the queue).
+- The queue only resolves reports (`PENDING → RESOLVED`); there is no bulk
+  action and no history view beyond `resolved_by`/`resolved_at` on the row.
+- Dashboard counters are point-in-time totals — no historical trends, and
+  the moderation page shows no per-tab counts beyond what pagination
+  reports.
+- Visibility rules are server-enforced (`404` for inactive-game content or
+  hidden comments); the client merely omits controls it knows will fail.
 
 ## Conventions
 

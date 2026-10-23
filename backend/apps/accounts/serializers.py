@@ -19,6 +19,42 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "email", "is_staff")
 
 
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    """Self-service profile update — only non-sensitive display fields.
+
+    Exposes ``first_name``/``last_name`` exclusively, so a crafted payload can
+    never change ``email``, ``is_staff``, ``is_superuser`` or ``is_active``
+    (privilege-escalation / account-takeover guard).
+    """
+
+    class Meta:
+        model = User
+        fields = ("first_name", "last_name")
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    """Safe user representation for the staff user list — no password/perms."""
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "is_staff",
+            "is_active",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class AdminUserStatusSerializer(serializers.Serializer):
+    """Staff-only payload for lock/unlock (``is_active``)."""
+
+    is_active = serializers.BooleanField()
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
     password = serializers.CharField(

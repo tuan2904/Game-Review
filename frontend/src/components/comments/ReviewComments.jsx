@@ -4,6 +4,7 @@ import {
   createReviewComment,
   deleteComment,
   listReviewComments,
+  moderateComment,
   updateComment,
 } from "../../api/comments";
 import { useAuth } from "../../contexts/AuthContext";
@@ -11,6 +12,7 @@ import EmptyState from "../common/EmptyState";
 import ErrorMessage from "../common/ErrorMessage";
 import Loading from "../common/Loading";
 import Pagination from "../common/Pagination";
+import ReportControl from "../moderation/ReportControl";
 import CommentForm from "./CommentForm";
 import CommentItem from "./CommentItem";
 
@@ -36,6 +38,9 @@ import CommentItem from "./CommentItem";
  *  - Edit/Delete render for the comment's author or staff; delete requires
  *    an inline confirmation; failures (401/403/404/400…) render a
  *    recoverable message and leave the list untouched (404 reconciles).
+ *  - staff additionally see hidden (moderated) comments with a "Hidden"
+ *    badge, a Hide/Unhide control, and a filter (all / visible / hidden);
+ *    non-staff never receive hidden comments from the API.
  *
  * @param {Object} props
  * @param {number} props.reviewId id of the review these comments belong to
@@ -44,24 +49,34 @@ export default function ReviewComments({ reviewId }) {
   const { user, isAuthenticated } = useAuth();
   const location = useLocation();
   const panelId = useId();
+  const isStaff = Boolean(user?.is_staff);
 
   const [open, setOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [page, setPage] = useState(1);
+  const [hiddenFilter, setHiddenFilter] = useState("all");
   const [result, setResult] = useState({ key: null, data: null, error: null });
 
   const [editingId, setEditingId] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [moderatingId, setModeratingId] = useState(null);
   const [actionError, setActionError] = useState(null);
 
-  const key = `${reviewId}|${page}|${reloadKey}`;
+  // Non-staff always request the default (visible) list; the server enforces
+  // this regardless, but we keep their key/filter inert.
+  const activeFilter = isStaff ? hiddenFilter : "all";
+  const key = `${reviewId}|${page}|${reloadKey}|${activeFilter}`;
 
   useEffect(() => {
     if (!open) return undefined;
     const controller = new AbortController();
     const { signal } = controller;
-    listReviewComments(reviewId, { page, page_size: 12 }, { signal })
+    const params = { page, page_size: 12 };
+    if (activeFilter !== "all") {
+      params.is_hidden = activeFilter === "hidden";
+    }
+    listReviewComments(reviewId, params, { signal })
       .then((data) => {
         if (signal.aborted) return;
         setResult({ key, data, error: null });
@@ -71,7 +86,7 @@ export default function ReviewComments({ reviewId }) {
         setResult({ key, data: null, error: caught });
       });
     return () => controller.abort();
-  }, [open, reviewId, page, key]);
+  }, [open, reviewId, page, key, activeFilter]);
 
   const loading = open && result.key !== key;
   const comments = loading ? null : result.data;
@@ -92,6 +107,19 @@ export default function ReviewComments({ reviewId }) {
     await updateComment(comment.id, values);
     setEditingId(null);
     refresh();
+  }
+
+  async function handleModerate(comment) {
+    setModeratingId(comment.id);
+    setActionError(null);
+    try {
+      await moderateComment(comment.id, !comment.is_hidden);
+      refresh();
+    } catch (caught) {
+      setActionError(caught?.message || "Couldn't update this comment.");
+    } finally {
+      setModeratingId(null);
+    }
   }
 
   async function handleConfirmDelete(comment) {
@@ -124,15 +152,27 @@ export default function ReviewComments({ reviewId }) {
       <ErrorMessage title="Couldn't load comments" message={error.message} onRetry={refresh} />
     );
   } else if (comments && comments.items.length === 0) {
-    content = (
-      <EmptyState title="No comments yet" description="No one has replied to this review." />
-    );
+    content =
+      activeFilter === "all" ? (
+        <EmptyState title="No comments yet" description="No one has replied to this review." />
+      ) : (
+        <EmptyState
+          title="No matching comments"
+          description="No comments match the current moderation filter."
+        />
+      );
   } else if (comments) {
     content = (
       <>
         <ul className="comment-list">
           {comments.items.map((comment) => {
             const canManage = Boolean(user) && (user.is_staff || comment.author?.id === user.id);
+            /* Phase E: signed-in non-owners can flag the comment (staff hide
+               it directly instead) — eligibility decided by the parent. */
+            const reportControl =
+              isAuthenticated && !isStaff && comment.author?.id !== user?.id ? (
+                <ReportControl targetType="comment" targetId={comment.id} />
+              ) : null;
             const editable = () => {
               setActionError(null);
               setEditingId(comment.id);
@@ -162,6 +202,9 @@ export default function ReviewComments({ reviewId }) {
                 comment={comment}
                 onEdit={canManage ? editable : undefined}
                 onDelete={canManage ? deletable : undefined}
+                reportControl={reportControl}
+                onToggleHidden={isStaff ? () => handleModerate(comment) : undefined}
+                moderating={moderatingId === comment.id}
                 confirming={confirmId === comment.id}
                 onConfirmDelete={() => handleConfirmDelete(comment)}
                 onCancelDelete={() => setConfirmId(null)}
@@ -202,6 +245,27 @@ export default function ReviewComments({ reviewId }) {
             </p>
           ) : (
             <CommentForm submitLabel="Post comment" onSubmit={handleCreate} />
+          )}
+
+          {isStaff && (
+            <div className="comments__filter field">
+              <label className="field__label" htmlFor={`${panelId}-filter`}>
+                Show comments
+              </label>
+              <select
+                id={`${panelId}-filter`}
+                className="field__input"
+                value={hiddenFilter}
+                onChange={(event) => {
+                  setHiddenFilter(event.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="all">All</option>
+                <option value="visible">Visible only</option>
+                <option value="hidden">Hidden only</option>
+              </select>
+            </div>
           )}
 
           {actionError && <ErrorMessage title="Comment action failed" message={actionError} />}

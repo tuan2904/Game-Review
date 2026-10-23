@@ -134,6 +134,19 @@ export default function GameDetail() {
             <dt>Category</dt>
             <dd>{game.category ? game.category.name : "Uncategorized"}</dd>
           </div>
+          {/* Phase D aggregates — present on every games-endpoint payload. */}
+          {game.review_count !== undefined && (
+            <div className="game-detail__fact">
+              <dt>Rating</dt>
+              <dd>
+                {game.review_count > 0
+                  ? `${game.average_rating != null ? `★ ${Number(game.average_rating).toFixed(1)} · ` : ""}${
+                      game.review_count
+                    } ${game.review_count === 1 ? "review" : "reviews"}`
+                  : "No reviews yet"}
+              </dd>
+            </div>
+          )}
         </dl>
 
         <section className="game-detail__description" aria-labelledby="about-heading">

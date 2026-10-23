@@ -10,6 +10,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from apps.comments.constants import DEFAULT_BANNED_WORDS
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
@@ -41,6 +43,7 @@ INSTALLED_APPS = [
     "apps.reviews",
     "apps.comments",
     "apps.favorites",
+    "apps.reports",
 ]
 
 MIDDLEWARE = [
@@ -123,6 +126,13 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.DefaultPagination",
     "PAGE_SIZE": 12,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
+    # Scoped rate limits (no global DEFAULT_THROTTLE_CLASSES). The "login" and
+    # "register" scopes are applied only to those views via
+    # apps.accounts.throttles; override the rates with the env vars below.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.getenv("AUTH_LOGIN_THROTTLE_RATE", "10/min"),
+        "register": os.getenv("AUTH_REGISTER_THROTTLE_RATE", "5/min"),
+    },
 }
 
 # Short-lived access tokens + rotating, blacklisted refresh tokens: revocation
@@ -135,6 +145,15 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": False,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+# Comment moderation: configurable banned-word list (comma-separated env var).
+# Matching is case- and accent-insensitive and whole-word; set the variable to
+# an empty string to disable word filtering entirely.
+COMMENT_BANNED_WORDS = [
+    word.strip()
+    for word in os.getenv("COMMENT_BANNED_WORDS", ",".join(DEFAULT_BANNED_WORDS)).split(",")
+    if word.strip()
+]
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()

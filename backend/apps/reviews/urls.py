@@ -1,10 +1,15 @@
 from django.urls import path
 
-from apps.reviews.views import GameReviewListCreateView, ReviewUpdateDestroyView
+from apps.reviews.views import (
+    AdminReviewListView,
+    GameReviewListCreateView,
+    ReviewUpdateDestroyView,
+)
 
 app_name = "reviews"
 
 urlpatterns = [
+    path("admin/reviews/", AdminReviewListView.as_view(), name="admin-review-list"),
     path(
         "games/<slug:slug>/reviews/",
         GameReviewListCreateView.as_view(),
