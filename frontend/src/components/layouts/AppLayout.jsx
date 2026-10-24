@@ -98,7 +98,7 @@ export default function AppLayout() {
       </main>
 
       <footer className="app-footer">
-        <p>GameReview — Phase 06 frontend foundation. Feature pages arrive in later phases.</p>
+        <p>GameReview</p>
       </footer>
     </div>
   );
