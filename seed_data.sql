@@ -61,39 +61,39 @@ ON CONFLICT (slug) DO NOTHING;
 INSERT INTO games_game (name, slug, description, developer, publisher, release_date, cover_image, status, category_id, created_at, updated_at)
 VALUES
   ('Elden Ring', 'elden-ring', 'Open-world action RPG.FromSoftware hợp tác với George R.R. Martin. Thế giới Lands Between rộng lớn, boss khó nhằn và tự do khám phá.',
-   'FromSoftware', 'Bandai Namco', '2022-02-25', 'https://cdn.example.com/covers/elden-ring.jpg', 'ACTIVE',
+   'FromSoftware', 'Bandai Namco', '2022-02-25', 'http://localhost:5173/covers/elden-ring.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='rpg'), now(), now()),
 
   ('Hollow Knight', 'hollow-knight', 'Metroidvania indie lấy bối cảnh vương quốc côn trùng Hallownest. Đồ họa hand-drawn, chiến đấu tight, khám phá bí ẩn.',
-   'Team Cherry', 'Team Cherry', '2017-02-24', 'https://cdn.example.com/covers/hollow-knight.jpg', 'ACTIVE',
+   'Team Cherry', 'Team Cherry', '2017-02-24', 'http://localhost:5173/covers/hollow-knight.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='indie'), now(), now()),
 
   ('Stardew Valley', 'stardew-valley', 'Farm-sim thư giãn: trồng trọt, khai thác mỏ, kết bạn, cưới spouse. Một người làm gần như toàn bộ game.',
-   'ConcernedApe', 'ConcernedApe', '2016-02-26', 'https://cdn.example.com/covers/stardew.jpg', 'ACTIVE',
+   'ConcernedApe', 'ConcernedApe', '2016-02-26', 'http://localhost:5173/covers/stardew-valley.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='indie'), now(), now()),
 
   ('Cyberpunk 2077', 'cyberpunk-2077', 'RPG thế giới mở Cyberpunk tại Night City. Ban đầu nhiều lỗi, sau được cập nhật lớn 2.0 và Phantom Liberty.',
-   'CD Projekt Red', 'CD Projekt', '2020-12-10', 'https://cdn.example.com/covers/cyberpunk.jpg', 'ACTIVE',
+   'CD Projekt Red', 'CD Projekt', '2020-12-10', 'http://localhost:5173/covers/cyberpunk-2077.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='rpg'), now(), now()),
 
   ('Hades', 'hades', 'Roguelike thần thoại Hy Lạp. Chết -> quay lại Inferno, mạnh dần lên. Chiến đấu đỉnh cao, cốt truyện kể dần qua mỗi lượt chạy.',
-   'Supergiant Games', 'Supergiant Games', '2020-09-17', 'https://cdn.example.com/covers/hades.jpg', 'ACTIVE',
+   'Supergiant Games', 'Supergiant Games', '2020-09-17', 'http://localhost:5173/covers/hades.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='action'), now(), now()),
 
   ('Portal 2', 'portal-2', 'Puzzle FPS huyền thoại. Dùng khẩu súng portal giải câu đố, có chế độ co-op 2 người.',
-   'Valve', 'Valve', '2011-04-19', 'https://cdn.example.com/covers/portal2.jpg', 'ACTIVE',
+   'Valve', 'Valve', '2011-04-19', 'http://localhost:5173/covers/portal-2.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='adventure'), now(), now()),
 
   ('Celeste', 'celeste', 'Platformer khó nhưng công bằng. Leo núi, vượt qua nội tâm nhân vật. Assist mode hỗ trợ game thủ mọi trình độ.',
-   'Maddy Makes Games', 'Maddy Makes Games', '2018-01-25', 'https://cdn.example.com/covers/celeste.jpg', 'ACTIVE',
+   'Maddy Makes Games', 'Maddy Makes Games', '2018-01-25', 'http://localhost:5173/covers/celeste.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='indie'), now(), now()),
 
   ('Factorio', 'factorio', 'Xây nhà máy tự động hoá quy mô khổng lồ. Research, mở rộng, phòng thủ khỏi quái. Nghiện cực mạnh.',
-   'Wube Software', 'Wube Software', '2020-08-14', 'https://cdn.example.com/covers/factorio.jpg', 'ACTIVE',
+   'Wube Software', 'Wube Software', '2020-08-14', 'http://localhost:5173/covers/factorio.jpg', 'ACTIVE',
    (SELECT id FROM games_category WHERE slug='strategy'), now(), now()),
 
   ('Disco Elysium', 'disco-elysium', 'RPG trinh thám không chiến đấu, toàn bộ gameplay là đối thoại và Rolleplay nội tâm. Director''s Cut thêm voice và võ thuật.',
-   'ZA/UM', 'ZA/UM', '2019-10-15', 'https://cdn.example.com/covers/disco.jpg', 'INACTIVE',
+   'ZA/UM', 'ZA/UM', '2019-10-15', 'http://localhost:5173/covers/disco-elysium.jpg', 'INACTIVE',
    (SELECT id FROM games_category WHERE slug='rpg'), now(), now())
 ON CONFLICT (slug) DO NOTHING;
 

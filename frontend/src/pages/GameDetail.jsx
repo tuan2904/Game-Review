@@ -8,6 +8,7 @@ import PageContainer from "../components/common/PageContainer";
 import FavoriteToggle from "../components/favorites/FavoriteToggle";
 import GameReviews from "../components/reviews/GameReviews";
 import { formatDate, formatDateTime } from "../utils/format";
+import { getCoverImage } from "../utils/covers";
 
 /**
  * Game detail — `GET /api/v1/games/{slug}/` plus its reviews section
@@ -107,10 +108,10 @@ export default function GameDetail() {
           {added && <p className="muted">Added {added}</p>}
         </header>
 
-        {game.cover_image ? (
+        {getCoverImage(game) ? (
           <img
             className="game-detail__cover"
-            src={game.cover_image}
+            src={getCoverImage(game)}
             alt={`${game.name} cover`}
             width="960"
             height="540"

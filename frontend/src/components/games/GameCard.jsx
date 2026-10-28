@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { formatDate } from "../../utils/format";
+import { getCoverImage } from "../../utils/covers";
 
 /**
  * Game card for the listing grid. Fields come straight from the verified
@@ -18,6 +19,7 @@ import { formatDate } from "../../utils/format";
  */
 export default function GameCard({ game, action }) {
   const released = formatDate(game.release_date);
+  const cover = getCoverImage(game);
   /* The favorites payload (docs/API.md — Favorite API) omits these fields
      entirely; absent fields render nothing instead of inventing "unknown"
      text. Present-but-empty values keep the explicit fallbacks. */
@@ -27,10 +29,10 @@ export default function GameCard({ game, action }) {
 
   return (
     <article className="game-card">
-      {game.cover_image ? (
+      {cover ? (
         <img
           className="game-card__cover"
-          src={game.cover_image}
+          src={cover}
           alt=""
           loading="lazy"
           width="640"
